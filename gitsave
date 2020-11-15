@@ -1,0 +1,5 @@
+#git clone https://github.com/...
+git add -A .
+git commit -a -m "..."
+git push --all
+
