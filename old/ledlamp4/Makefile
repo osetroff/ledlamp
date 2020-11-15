@@ -1,7 +1,7 @@
 PRJ = ledlamp
 MCU = atmega328p
 CLK = 8000000L
-PRG = -v -D -carduino "-P/dev/ttyUSB0" -b38400
+PRG = -D -carduino -P/dev/ttyUSB0 -b38400
 LFU = 0xE2
 HFU = 0xD2
 EFU = 0x07

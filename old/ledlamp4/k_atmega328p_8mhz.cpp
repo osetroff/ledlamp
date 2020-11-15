@@ -586,7 +586,7 @@ uint8_t i2c_w(uint8_t address,
 //==========ISR (WDT_vect) Watchdog Timer interrupt service routine.
 //This routine is required to allow automatic WDIF and WDIE bit clearance in hardware.
 // WDIE & WDIF is cleared in hardware upon entering this ISR
-//ISR (WDT_vect){wdt_disable();}
+ISR (WDT_vect){wdt_disable();}
 //asm volatile("nop");
 enum period_t {_15,_30,_60,_120,_250,_500,_1s,_2s,_4s,_8s,_forever};
 enum adc_t{adc0,adc1};
@@ -648,11 +648,13 @@ inline void	lowPowerBodOn(byte mode) {
 
 inline void lowPowerBodOff(byte mode) {
   //do {
+    //lph;
     set_sleep_mode(mode);
     cli();
     sleep_enable();
     sleep_bod_disable();
     sei();
+    //lph;
     sleep_cpu();
     sleep_disable();
     sei();
@@ -822,7 +824,7 @@ inline void standby(period_t period, bod_t bod) {
 //to wait all chars be sended through uart
 //before pwrdown, use:
 //while (UCSR0B & (1<<UDRIE0)) {;} dus(120);
-inline void	pwrdown(period_t period,bod_t bod) {
+inline void pwrdown(period_t period,bod_t bod) {
   wdtsleep(period);
   if (bod == b0) {
     lowPowerBodOff(SLEEP_MODE_PWR_DOWN);

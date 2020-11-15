@@ -66,24 +66,25 @@ int main(void){
     
     while (1) {
     	
-        s("123456789"); spn;
-//        lpl;
-        //serial_wait(100);
-        //dms(100);
-        //UCSR0B = 0;
-        //dms(10);
+        s("123456789lklklkalskal;sal;j;alj;asj;laj;ja;slja;j;lasjs;laj"); spn;
+        //lph;
+        
+        //wait serial made all output
+        dms(1);
+        //then sleep
         pwrdown(_1s,b0);
-        //pwrsave(_1s,b0,t20);
-        //UCSR0B = (1 << RXEN0) | (1 << TXEN0);
-        dms(10);
-        //lpl;
+        
 
-//        lph;
-//        serial_wait(100);
-//        UCSR0B = 0
-//        pwrdown(_1s,b0);
-//        power_usart0_enable();
-//        dms(lpause);
+        //lpl;
+        dms(1000);
+        
+        if (serial_has_input) {
+            sp('>');
+            serial_sendArray(serial_buf,serial_buf_i);
+            spn;
+            serial_buf_clear();
+        }
+        
 //        lph;dms(lpause);
 //    	lpl;dms(lpause);
     }
