@@ -1,5 +1,6 @@
-#ifndef k_atmega328p
-#define k_atmega328p
+#ifndef k_atmega328p_8mhz_
+#define k_atmega328p_8mhz_
+#define F_CPU 8000000L
 /*
     atmega328p dip28
 
@@ -37,17 +38,34 @@ T1  |5 PD5        PC0 A0 |
     |9 PB1        PB2 10 |
 */
 
+
 #include <avr/sleep.h>
 #include <avr/wdt.h>
 #include <avr/power.h>
 #include <avr/interrupt.h>
 #include <avr/io.h>
-//#include "Arduino.h"
+#include <avr/pgmspace.h>
+
+//#include "iom328p.h"
 
 #define k_cli() cli()
 #define k_sei() sei()
 
-static inline byte k_iswatchdogerror(){return (GPIOR0&(1<<WDRF));}
+#define u8      uint8_t
+#define u16     uint16_t
+#define u32     uint32_t
+#define i16     int16_t
+#define i32     int32_t
+
+#include <assert.h>
+
+//led debug
+inline static void led_pin_high(void);
+inline static void led_pin_low(void);
+inline static void led_pin_xor(void);
+#define lph  led_pin_high()
+#define lpl  led_pin_low()
+#define lpx  led_pin_xor()
 
 //========================
 //
@@ -59,7 +77,7 @@ typedef unsigned char byte;
 typedef unsigned short word;
 typedef unsigned int dword;
 
-
+static inline byte k_iswatchdogerror(){return (GPIOR0&(1<<WDRF));}
 //========================
 //  memory
 //========================
@@ -109,20 +127,37 @@ word testsp(){
 //   delay
 //========================
 
-//16000000/1000000 = 16 ticks for 1 us,
-//2 ticks sbiw + 2 ticks brne = 4 ticks for one loop step
-//so we need (16*ticks_us)/4  =  loop steps
-inline void dus(word tic_us){
-      register uint16_t tic_us0=(((F_CPU/1000000)*tic_us)>>2);
-      __asm__ volatile (
-        "l%=: sbiw %0,1    \n\t"
-        "brne l%=     \n\t"
-        : "=w" (tic_us0)
-        : "0" (tic_us0)
-      );
+//==Delay
+void dus(uint16_t tic_us){
+	tic_us <<= 1; //1us = 4 öèêëà
+	__asm__ volatile (
+			"1: sbiw %0,1" "\n\t"
+			"brne 1b"
+			: "=w" (tic_us)
+			: "0" (tic_us)
+		  );
 }
-void dms(word tic_ms){while(tic_ms-->0){dus(1000);}}
-
+void dms(uint16_t tic_ms){
+  //correction
+  uint16_t tic_us=(tic_ms + (tic_ms>> 2)+(tic_ms>> 11))<<1;
+  if (tic_us>0) {
+  __asm__ volatile (
+    "1: sbiw %0,1" "\n\t"
+    "brne 1b"
+    : "=w" (tic_us)
+    : "0" (tic_us)
+   );
+  }
+  while(tic_ms-->0){
+    tic_us=1000 << 1;
+    __asm__ volatile (
+			"1: sbiw %0,1" "\n\t"
+			"brne 1b"
+			: "=w" (tic_us)
+			: "0" (tic_us)
+		 );
+  }
+}
 
 //========================
 //   adc and ac
@@ -926,52 +961,6 @@ word readv(byte lmask,word r1k,word r2k){
 }
 
 
-//=========
-// uart
-//=========
-#define UART_DOUBLESPEED
-#define UART_TXREADY UDRE0
-#define UART_RXREADY RXC0
-#define UART_DOUBLE	U2X0
-#define UDR  UDR0
-#define UCRA UCSR0A
-#define UCRB UCSR0B
-#define UCRC UCSR0C
-#define UCRC_VALUE ((1<<UCSZ01) | (1<<UCSZ00))
-#define RXCIE RXCIE0
-#define TXCIE TXCIE0
-#define RXEN RXEN0
-#define TXEN TXEN0
-#define UBRRL UBRR0L
-#define UBRRH UBRR0H
-#define SIG_UART_TRANS SIG_USART_TRANS
-#define SIG_UART_RECV  SIG_USART_RECV
-#define SIG_UART_DATA  SIG_USART_DATA
-#define UART_CALC_BAUDRATE(baudRate) ((dword)((F_CPU) + ((dword)baudRate * 4UL)) / ((dword)(baudRate) * 8UL) - 1)
-void UART_Init(dword UART_BAUD_RATE){
-  UBRRH = (UART_CALC_BAUDRATE(UART_BAUD_RATE)>>8) & 0xFF;
-  UBRRL = (UART_CALC_BAUDRATE(UART_BAUD_RATE) & 0xFF);
-  UCSR0A = ( 1<<UART_DOUBLE );
-  UCRB = ((1<<TXEN) | (1<<RXEN));
-  UCRC = UCRC_VALUE;
-}
-void UART_SendByte(byte data){
-  while (!(UCRA & (1<<UART_TXREADY)));
-  UDR = data;
-}
-bool UART_ReadByte(byte& data){
-  if (UCRA & (1<<UART_RXREADY)){
-    data = UDR;
-    return true;
-  } else return false;
-}
-void UART_SendArray(byte *buffer, word bufferSize){
-for(word i=0; i<bufferSize; i++) UART_SendByte(buffer[i]);
-}
-
-
-
-
 
 
 
@@ -1074,7 +1063,7 @@ byte atmega328p_rand(){
 
 //===========================
 #define atmega328p_init()  \
-  MCUSR=0;wdt_enable(_8s); \
+  MCUSR=0;wdt_disable(); \
   adc_off();power_adc_disable();ac_off();\
   power_timer0_disable();\
   power_timer1_disable();\
@@ -1118,32 +1107,46 @@ static void serial_init(){
   // Use 8-bit character sizes
   UCSR0C = (1 << UCSZ01) | (1 << UCSZ00);
   // Load lower 8-bits of the baud rate value into the low byte of the UBRR register
-  UBRRL = BAUD_PRESCALE;
+  UBRR0L = BAUD_PRESCALE;
   // Load upper 8-bits of the baud rate value into the high byte of the UBRR register
-  UBRRH = (BAUD_PRESCALE >> 8);
+  UBRR0H = (BAUD_PRESCALE >> 8);
   // Enable the USART Recieve Complete interrupt (USART_RXC)
-  UCSR0B |= (1 << RXCIE);
+  UCSR0B |= (1 << RXCIE0);
 }
 static void serial_write(byte lb){
-  while (!(UCRA & (1<<UART_TXREADY)));
+  while (!(UCSR0A & (1<<UDRE0)));
   UDR0 = lb;
+}
+static void serial_sendArray(byte *buffer, word bufferSize){
+    for(word i=0; i<bufferSize; i++) serial_write(buffer[i]);
+}
+static void serial_sendString(const char *lp){
+    char lc;
+    while (1) {
+        lc=*lp++;
+        if (lc==0) break;
+        serial_write(lc);
+    }
+}
+
+#define _waituart 120
+
+//wait till uart will send all deb info
+static void serial_wait(byte lus){
+  
+   if ((UCSR0B & (1<<UDRIE0))!=0) {
+      lph;
+    word lwait=4000;
+    while (lwait-->0) {
+      if ((UCSR0B & (1<<UDRIE0))==0) {dus(lus);break;}
+      dus(10);
+    }
+  }
 }
 
 //---------------------
 #ifdef _loguart
-        #define _waituart 120
-
-        //wait till uart will send all deb info
-        inline void waituart(byte lus){
-          if (UCSR0B & (1<<UDRIE0)) {
-            word lms=2000;
-            while (lms-->0) {
-              if ((UCSR0B & (1<<UDRIE0))==0) {dus(lus);break;}
-              dus(5);
-            }
-          }
-        }
-
+/*
         //#include <HardwareSerial.h>
 
         void logb(){serial_init();sb();}
@@ -1157,7 +1160,7 @@ static void serial_write(byte lb){
             serial_write('\n');
         }
         void loge(){;}
-
+*/
 #endif
 //-------------------------
 //copy from flash to ram
