@@ -15,6 +15,13 @@
  * 
  * pin - 20k - GND
  * pin - solid state rele 5v
+
+ Bits 
+       2    4    5   GND
+       .    .    .    .
+  
+       .    .    .    .
+       1    3        GND
  */
 
 #include "k_atmega328p_8mhz.cpp"
@@ -33,42 +40,23 @@ inline static void initLedPin(void){pbo(led_pin);pbl(led_pin);}
 //PD3..PD7
 #define InPinsMask (_3|_4|_5|_6|_7)
 //read InPins 
-inline volatile static u8 readInPins() {
-    return (PIND&InPinsMask);
-}
-
-static void initInPins(){
-    //set to input
-    pdi(InPinsMask);
-}
+inline volatile static u8 readInPins() {return (PIND&InPinsMask);}
+static void initInPins(){pdi(InPinsMask);}
 
 //-----------------
 // output pins
 //PB1..PB5
 #define OutPinsMask (_1|_2|_3|_4|_5)
 //read InPins 
-volatile static void setOutPins(u8 pins) {
-    PORTB=((PORTB&(~(OutPinsMask)))|pins);
-}            
-
+volatile static void setOutPinHigh(u8 pinmask) {pbh(pinmask);}
+volatile static void setOutPinLow(u8 pinmask) {pbl(pinmask);}
 static void initOutPins(){
     //turn to low
     pbl(OutPinsMask);
     //set to output
     pbo(OutPinsMask);
 }
-
-//--------------------
-// serial output
-inline static void sp(char lc){serial_write(lc);}
-#define spn sp(0xd);sp(0xa)
-#define spc sp(' ')
-inline static void s(const char *ls){serial_sendString(ls);}
-//sph hex
-static inline void sphc(char a){if (a>9) {a+='A'-10;} else {a+='0';} sp(a);}
-static void sph(uint8_t a) {sphc(a>>4);sphc(a&0xF);}
-static void sph16(uint16_t a) {sph(a>>8);sph(a&0xFF);}
-
+inline volatile static u8 readOutPins() {return (PORTB&OutPinsMask);}
 
 //------------------
 // Lamps
@@ -81,19 +69,65 @@ typedef struct {
 } Lamp_t;
 //array of lamp
 static Lamp_t Lamps[]={
+    //In,Out
     //?
-    {0,0,0,0,3},
+    {_7,_5,0,0,3},
     //hall 1
-    {0,0,0,0,3},
+    {_5,_1,0,0,3},
     //cabinet
-    {0,0,0,0,3},
+    {_6,_2,0,0,3},
     //bedroom
-    {0,0,0,0,3},
+    {_3,_3,0,0,3},
     //hall 2
-    {0,0,0,0,3},
+    {_4,_4,0,0,3},
 };
 //lamps count
-#define LampsCount   sizeof(Lamps)
+#define LampsCount   (sizeof(Lamps)/sizeof(Lamp_t))
+
+//--------------------
+// serial output
+inline static void sp(char lc){serial_write(lc);}
+#define spn sp(0xd);sp(0xa)
+#define sps sp(' ')
+#define sp0 sp('0')
+inline static void s(const char *ls){serial_sendString(ls);}
+//sph hex
+static inline void sphc(char a){if (a>9) {a+='A'-10;} else {a+='0';} sp(a);}
+static void sph(uint8_t a) {sphc(a>>4);sphc(a&0xF);}
+static void sph16(uint16_t a) {sph(a>>8);sph(a&0xFF);}
+//decimal output in l0 places
+//l0=1
+static void sp8(uint8_t la,uint8_t l0=0){
+ uint8_t li;
+ uint8_t lz=0;
+ if (la>=100) {
+     li=la/100;
+     sp(0x30+li);
+     la-=(li*100);
+     lz=1;
+ } else {if (l0>2) {sp0;}}
+ if (la>=10) {
+     li=la/10;
+     sp(0x30+li);
+     la-=(li*10);
+ } else {if ((l0>1)||(lz>0)) {sp0;}}
+ sp(0x30+la);
+}
+
+static void testh(){sph16(testheap());sps;sph16(testsp());spn;}
+static void testl(){            
+    s("=======");spn;
+    u8 li=0;
+    do {
+        sp8(li);sp(':');
+        sph(Lamps[li].inPinMask);sps;
+        sph(Lamps[li].outPinMask);sps;
+        sp8(Lamps[li].isOn);sps;
+        sp8(Lamps[li].timePause);sps;
+        sp8(Lamps[li].timePauseDef);spn;
+
+    } while (++li<LampsCount);
+}
 
 //=========================
 int main(void){
@@ -107,10 +141,10 @@ int main(void){
     //---------------
     // serial
     serial_init();
-    sp(Lamps+'0');s(" lamps.");spn;
-    s("Start2");spn;
-    s("Start3");spn;
-    
+    sp8(LampsCount);s(" lamps.");spn;
+    //s("Start2");spn;//s("Start3");spn;
+    //testh();
+    testl();
     //-----------------
     // save initial InPins
     //means all lamps are off    
@@ -120,68 +154,104 @@ int main(void){
     // pause to not allow change switch quickly
     u8 timePause=0;
     
+    
+    
     //=============================
     // main loop
+    volatile u8 li;
     
     while (1) {
     	
         // get actual InPins
         u8 curInPins=readInPins();
-        s("> ");sph(curInPins);spn;
+        s("In:");sph(curInPins);sps;
+        s("Out:");sph(readOutPins());spn;
         
         // some switches have been pressed
         if (curInPins!=InPins) {
-            
+            testl();
             
             // for each lamp look for switch changes
-            for (u8 li=0;li<LampsCount;li++) {
-                
+            li=0;
+            do {
+                sp8(li);spn;
                 // compare input pin for switch of lamp li
                 if ((curInPins&Lamps[li].inPinMask)!=(InPins&Lamps[li].inPinMask)) {
                 
                     // switch has changed
                     if (Lamps[li].timePause==0) {
+
+                        s("Lamp ");sp8(li);
                         // lamp can be switched
-                        u8 lampIsOn=Lamps[li].isOn;
-                        
-                        if (lampIsOn==0) {
+                        if (Lamps[li].isOn==0) {
                             // lamp was off -> turn it on
-                            
+                            setOutPinHigh(Lamps[li].outPinMask);
+                            Lamps[li].isOn=1;
+                            s(" is on");
                         } else {
                             // lamp was on -> turn it off
-                            
+                            setOutPinLow(Lamps[li].outPinMask);
+                            Lamps[li].isOn=0;
+                            s(" is off");
                         }
+                        spn;
+                        // set pause
+                        Lamps[li].timePause=Lamps[li].timePauseDef;
+                        // update timePause if needed
+                        if (Lamps[li].timePause>timePause) {timePause=Lamps[li].timePause;}
+                        
+                    } else {
+                        s("Skipped");spn;
                     }
-                    
-                    
                 }
-                
-            } //for
+            } while (++li<LampsCount);
             
+            testl();
             // save Pins
             InPins=curInPins;
-        } 
+        }
+        
+        
+        //testh();
         //---------------------------
         // wait serial made all output
         dms(1);
         // then sleep
         pwrdown(_1s,b0);
+        //serial_init();
         
+        
+        //testh();
         //-------------
-        // spend portion of time
+        // decrease timePause
         if (timePause!=0) {
             timePause--;
-            //TODO for all lamps
-        
+          
+            s("timePause:");sp8(timePause);spn;
+          
+            u8 lpause;
+            // for all lamps
+            li=0;
+            do {
+                lpause=Lamps[li].timePause;
+                // 
+                if (lpause!=0) {Lamps[li].timePause=lpause-1;}
+            } while (++li<LampsCount);
+            
+            testl();
+            
         }
         
 
-        //process user input
+        //TODO doesnot work after pwrdown
+        // process user input
         if (serial_has_input) {
+            lph;
             sp('>');
             serial_sendArray(serial_buf,serial_buf_i);
             spn;
             serial_buf_clear();
+            dms(30000);
         }
     } //while
     //============================
