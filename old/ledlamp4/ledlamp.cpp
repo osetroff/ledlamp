@@ -1,30 +1,16 @@
 //turn on/off 5pcs led lamps
 //atmega328p 8mhz int dip28
-/*
- * 5 input pins
- * 
- * pin - 330 - switch - gnd
- * pin - 20k - VCC
- 
-  Bits:
-      3   4  GND  5   6  GND  7  GND 
-      |   |   |   |   |   |   |   |
-*/
-/*
- * 5 output pins
- * 
- * pin - 20k - GND
- * pin - solid state rele 5v
-
- Bits 
-       2    4    5   GND
-       .    .    .    .
-  
-       .    .    .    .
-       1    3        GND
- */
-
+//20201117
 #include "k_atmega328p_8mhz.cpp"
+
+//-----------------
+// debug output to serial
+//#define debug_
+#ifdef debug_
+#define l(a) a
+#else
+#define l(a)
+#endif
 
 //-----------------
 // led 
@@ -39,6 +25,14 @@ inline static void initLedPin(void){pbo(led_pin);pbl(led_pin);}
 // input pins
 //PD3..PD7
 #define InPinsMask (_3|_4|_5|_6|_7)
+/* 5 input pins
+ pin - 330 - switch - gnd
+ pin - 20k - VCC
+ Bits:
+      _3  _4  GND _5  _6  GND _7  GND 
+      |   |   |   |   |   |   |   |
+ top left
+*/
 //read InPins 
 inline volatile static u8 readInPins() {return (PIND&InPinsMask);}
 static void initInPins(){pdi(InPinsMask);}
@@ -47,6 +41,18 @@ static void initInPins(){pdi(InPinsMask);}
 // output pins
 //PB1..PB5
 #define OutPinsMask (_1|_2|_3|_4|_5)
+/* 5 output pins
+  pin - 20k - GND
+  pin - solid state rele 5v
+
+  Bits 
+ top left
+       _2   _4   _5   GND
+       .    .    .    .
+       .    .    .    .
+       _1   _3        GND
+  bottom
+*/
 //read InPins 
 volatile static void setOutPinHigh(u8 pinmask) {pbh(pinmask);}
 volatile static void setOutPinLow(u8 pinmask) {pbl(pinmask);}
@@ -70,16 +76,11 @@ typedef struct {
 //array of lamp
 static Lamp_t Lamps[]={
     //In,Out
-    //?
+    {_3,_1,0,0,3},
+    {_4,_2,0,0,3},
+    {_5,_3,0,0,3},
+    {_6,_4,0,0,3},
     {_7,_5,0,0,3},
-    //hall 1
-    {_5,_1,0,0,3},
-    //cabinet
-    {_6,_2,0,0,3},
-    //bedroom
-    {_3,_3,0,0,3},
-    //hall 2
-    {_4,_4,0,0,3},
 };
 //lamps count
 #define LampsCount   (sizeof(Lamps)/sizeof(Lamp_t))
@@ -114,8 +115,13 @@ static void sp8(uint8_t la,uint8_t l0=0){
  sp(0x30+la);
 }
 
-static void testh(){sph16(testheap());sps;sph16(testsp());spn;}
+static void testh(){
+    l(
+    sph16(testheap());sps;sph16(testsp());spn;
+    );
+}
 static void testl(){            
+    l(
     s("=======");spn;
     u8 li=0;
     do {
@@ -127,6 +133,7 @@ static void testl(){
         sp8(Lamps[li].timePauseDef);spn;
 
     } while (++li<LampsCount);
+    );
 }
 
 //=========================
@@ -140,11 +147,13 @@ int main(void){
         
     //---------------
     // serial
+    l(
     serial_init();
     sp8(LampsCount);s(" lamps.");spn;
     //s("Start2");spn;//s("Start3");spn;
     //testh();
     testl();
+    );
     //-----------------
     // save initial InPins
     //means all lamps are off    
@@ -164,9 +173,10 @@ int main(void){
     	
         // get actual InPins
         u8 curInPins=readInPins();
+        l(
         s("In:");sph(curInPins);sps;
         s("Out:");sph(readOutPins());spn;
-        
+        );
         // some switches have been pressed
         if (curInPins!=InPins) {
             testl();
@@ -174,34 +184,36 @@ int main(void){
             // for each lamp look for switch changes
             li=0;
             do {
-                sp8(li);spn;
+                l(sp8(li);spn;);
                 // compare input pin for switch of lamp li
                 if ((curInPins&Lamps[li].inPinMask)!=(InPins&Lamps[li].inPinMask)) {
                 
                     // switch has changed
                     if (Lamps[li].timePause==0) {
 
-                        s("Lamp ");sp8(li);
+                        l(s("Lamp ");sp8(li););
                         // lamp can be switched
                         if (Lamps[li].isOn==0) {
                             // lamp was off -> turn it on
                             setOutPinHigh(Lamps[li].outPinMask);
                             Lamps[li].isOn=1;
-                            s(" is on");
+                            l(s(" is on"););
                         } else {
                             // lamp was on -> turn it off
                             setOutPinLow(Lamps[li].outPinMask);
                             Lamps[li].isOn=0;
-                            s(" is off");
+                            l(s(" is off"););
                         }
-                        spn;
+                        l(spn;);
+                        
+                        lph;
                         // set pause
                         Lamps[li].timePause=Lamps[li].timePauseDef;
                         // update timePause if needed
                         if (Lamps[li].timePause>timePause) {timePause=Lamps[li].timePause;}
                         
                     } else {
-                        s("Skipped");spn;
+                        l(s("Skipped");spn;);
                     }
                 }
             } while (++li<LampsCount);
@@ -227,7 +239,7 @@ int main(void){
         if (timePause!=0) {
             timePause--;
           
-            s("timePause:");sp8(timePause);spn;
+            l(s("timePause:");sp8(timePause);spn;);
           
             u8 lpause;
             // for all lamps
@@ -238,6 +250,8 @@ int main(void){
                 if (lpause!=0) {Lamps[li].timePause=lpause-1;}
             } while (++li<LampsCount);
             
+            
+            if (timePause==0) {lpl;}
             testl();
             
         }
@@ -245,14 +259,16 @@ int main(void){
 
         //TODO doesnot work after pwrdown
         // process user input
+        l(
         if (serial_has_input) {
-            lph;
+            //lph;
             sp('>');
             serial_sendArray(serial_buf,serial_buf_i);
             spn;
             serial_buf_clear();
             dms(30000);
         }
+        );
     } //while
     //============================
 }
